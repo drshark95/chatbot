@@ -1,0 +1,13 @@
+beautifulsoup4==4.6.0
+Django==3.1.6
+djangorestframework==3.11.0
+gensim==3.8.3
+JPype1
+konlpy
+numpy
+openpyxl
+pandas
+scipy
+xlrd
+gunicorn
+pymysql
