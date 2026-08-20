@@ -32,6 +32,16 @@ CHATBOT_LOG_DB_ENABLED=false .venv/bin/python manage.py test
 
 테스트는 모델·데이터 개수, Mecab 품사 필터, 외부 DB 비접속, Django 화면과 질문 POST를 확인합니다.
 
+## Render 배포
+
+루트의 `render.yaml`은 무료 Render 웹 서비스 한 개를 정의합니다. GitHub 저장소를
+Render Blueprint로 연결하면 Python 3.11 환경에서 의존성과 정적 파일을 빌드하고,
+Gunicorn worker 한 개로 챗봇을 실행합니다.
+
+배포 환경에서는 `PUBLIC_CHATBOT_ONLY=true`가 적용되어 챗봇과 상태 확인 경로만
+공개됩니다. 옛 주소록, 로그인, Django 관리자 및 DRF 인증 경로는 URL에 등록되지
+않으며 질문의 외부 MariaDB 기록도 꺼진 상태를 유지합니다.
+
 ## 선택적 MariaDB 로그
 
 질문 기록이 꼭 필요할 때만 아래 환경변수를 별도로 설정합니다. 자격 증명을 Git에 커밋하지 마세요.

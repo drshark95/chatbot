@@ -35,6 +35,11 @@ class ChatbotModelTests(TestCase):
 
 
 class ChatbotViewTests(TestCase):
+    def test_health_check(self):
+        response = self.client.get('/health/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'status': 'ok'})
+
     def test_root_redirects_to_chat_service(self):
         response = self.client.get('/')
         self.assertRedirects(response, '/chat_service/', fetch_redirect_response=False)

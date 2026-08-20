@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: ebs-science-chatbot
+    runtime: python
+    plan: free
+    region: singapore
+    branch: master
+    autoDeployTrigger: commit
+    buildCommand: pip install -r requirements.lock.txt && python manage.py collectstatic --noinput
+    startCommand: gunicorn restfulapiserver.wsgi:application --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
+    healthCheckPath: /health/
+    envVars:
+      - key: DJANGO_DEBUG
+        value: "false"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_ALLOWED_HOSTS
+        value: .onrender.com
+      - key: CHATBOT_LOG_DB_ENABLED
+        value: "false"
+      - key: PUBLIC_CHATBOT_ONLY
+        value: "true"

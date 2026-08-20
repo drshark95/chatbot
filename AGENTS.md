@@ -76,14 +76,18 @@
 - Django secret, debug, allowed hosts도 각각 `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`, `DJANGO_ALLOWED_HOSTS` 환경변수를 사용한다.
 - 주소록과 앱 로그인은 레거시 부가 기능이다. 외부 배포 전 CSRF, 인증, rate limit, 개인정보 보존 정책을 별도로 검토한다.
 
-## 과거 및 향후 배포
+## 과거 및 현재 배포
 
 - 과거 구조는 Oracle Cloud Ubuntu VM의 Nginx → Gunicorn 유닉스 소켓 → Django였다.
 - SQLite는 Django 사용자·세션·주소록, 같은 공인 IP의 MariaDB는 질문 로그 용도였다.
 - 과거 IP는 Oracle Public Cloud 대역이지만 2026-08-20 80/443 포트가 모두 시간 초과됐다.
 - `copy_system_files/`, apt·iptables·systemd 스크립트는 과거 기록이며 현재 macOS에서 실행하지 않는다.
-- 현재는 로컬 재가동과 Git 복구까지만 검증됐다. 새 외부 배포 대상, HTTPS, 도메인, 클라우드 방화벽, secrets 관리, DB 스키마/보존 정책은 아직 정하지 않았다.
-- 외부 배포 전 `DJANGO_DEBUG=false`, 강한 secret, 실제 host 제한, HTTPS, secure cookie/HSTS 설정과 `manage.py check --deploy`를 검증한다.
+- 루트 `render.yaml`은 Singapore 리전의 무료 Python 웹 서비스 `ebs-science-chatbot`을 정의한다.
+- `.python-version`으로 Python 3.11.11을 고정하고 빌드 시 잠금 의존성 설치와 `collectstatic`을 수행한다.
+- Gunicorn은 모델 메모리 중복을 막기 위해 worker 1개, thread 4개로 실행하며 `/health/`를 상태 확인에 사용한다.
+- Render에서는 `PUBLIC_CHATBOT_ONLY=true`로 챗봇, favicon, health 경로만 등록한다. 레거시 주소록·로그인·관리자·DRF 인증 경로는 공개하지 않는다.
+- WhiteNoise가 수집된 정적 파일을 제공하며 외부 MariaDB 질문 기록은 비활성화한다.
+- 배포 전 `manage.py check --deploy`를 Render와 같은 환경변수로 검증한다.
 
 ## 변경 원칙
 
