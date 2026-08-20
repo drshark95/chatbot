@@ -87,6 +87,9 @@
 - Gunicorn은 모델 메모리 중복을 막기 위해 worker 1개, thread 4개로 실행하며 `/health/`를 상태 확인에 사용한다.
 - Render에서는 `PUBLIC_CHATBOT_ONLY=true`로 챗봇, favicon, health 경로만 등록한다. 레거시 주소록·로그인·관리자·DRF 인증 경로는 공개하지 않는다.
 - WhiteNoise가 수집된 정적 파일을 제공하며 외부 MariaDB 질문 기록은 비활성화한다.
+- 2026-08-21 생성된 무료 서비스의 공개 주소는 `https://ebs-science-chatbot.onrender.com`이며 Singapore 리전에서 실행된다.
+- GitHub `master` 브랜치와 연결되어 커밋 시 자동 배포된다. 무료 인스턴스는 유휴 시 정지하므로 첫 요청이 늦을 수 있다.
+- 첫 배포 `51b4838a`에서 Linux 의존성 설치, 정적 파일 수집, Gunicorn 기동, `/health/` 200, 챗봇 실제 질문 응답과 `/admin/` 404를 확인했다.
 - 배포 전 `manage.py check --deploy`를 Render와 같은 환경변수로 검증한다.
 
 ## 변경 원칙

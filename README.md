@@ -38,9 +38,14 @@ CHATBOT_LOG_DB_ENABLED=false .venv/bin/python manage.py test
 Render Blueprint로 연결하면 Python 3.11 환경에서 의존성과 정적 파일을 빌드하고,
 Gunicorn worker 한 개로 챗봇을 실행합니다.
 
+현재 공개 서비스: <https://ebs-science-chatbot.onrender.com>
+
 배포 환경에서는 `PUBLIC_CHATBOT_ONLY=true`가 적용되어 챗봇과 상태 확인 경로만
 공개됩니다. 옛 주소록, 로그인, Django 관리자 및 DRF 인증 경로는 URL에 등록되지
 않으며 질문의 외부 MariaDB 기록도 꺼진 상태를 유지합니다.
+
+무료 인스턴스는 일정 시간 요청이 없으면 정지하므로 첫 접속에는 시간이 걸릴 수
+있습니다. `master` 브랜치의 새 커밋은 Render에 자동 배포됩니다.
 
 ## 선택적 MariaDB 로그
 
