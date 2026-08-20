@@ -1,2 +1,8 @@
+.DS_Store
 .idea/
-venv/
+.venv/
+chatbot/
+__pycache__/
+*.py[cod]
+.env
+staticfiles/

@@ -1,103 +1,149 @@
+import logging
 import os
-from gensim.models import doc2vec
-from gensim.models.doc2vec import TaggedDocument
+import threading
+from pathlib import Path
+
+import mecab
 import pandas as pd
-#import openpyxl
-#import datetime
 import pymysql.cursors
 
-# 모델 불러오기
-d2v_faqs = doc2vec.Doc2Vec.load(os.path.join('./model/d2v_faqs_size200_min5_epoch20_ebs_science_qna.model'))
-
-# 질문-답변 파일 불러오기
-df2 = pd.read_excel('./data/df2_20210601_edited.xlsx')
-df2.dropna(axis=0)
-
-qna_num = 0  # 질문답변 번호인 qna_num 초기화
-
-# Mecab 사용
-from konlpy.tag import Mecab
-
-mecab = Mecab()
-text = u"""이제 구글 코랩에서 Mecab-ko 라이브러리 사용이 가능합니다. 읽어주셔서 감사합니다. 펭수"""
-nouns = mecab.nouns(text)
-print(nouns)
-
-filter_mecab = ['NNG',  # 보통명사
-                'NNP',  # 고유명사
-                'SL',  # 외국어
-                'VV',  # 동사 추가함 (20200831)
-                'VA',  # 형용사 추가함 (20200831)
-                'NP',  # 대명사 추가함 (20200928)
-                'NR',  # 수사 추가함 (20200929)
-                'SN',  # 숫자 추가함 (20200929)
-                'MAG' # 일반부사 추가함 (20210405)
-                ]
+from .legacy_gensim import load_legacy_doc2vec
 
 
-def tokenize_mecab(doc):
-    # jpype.attachThreadToJVM()
-    token_doc = ['/'.join(word) for word in mecab.pos(doc)]
-    return token_doc
+logger = logging.getLogger(__name__)
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+MODEL_PATH = BASE_DIR / "model" / "d2v_faqs_size200_min5_epoch20_ebs_science_qna.model"
+DATA_PATH = BASE_DIR / "data" / "df2_20210601_edited.xlsx"
+
+FILTER_MECAB = {
+    "NNG",  # 보통명사
+    "NNP",  # 고유명사
+    "SL",  # 외국어
+    "VV",  # 동사
+    "VA",  # 형용사
+    "NP",  # 대명사
+    "NR",  # 수사
+    "SN",  # 숫자
+    "MAG",  # 일반부사
+}
+
+mecab_tokenizer = mecab.MeCab()
+d2v_faqs = load_legacy_doc2vec(MODEL_PATH)
+questions_and_answers = (
+    pd.read_excel(DATA_PATH)
+    .dropna(subset=["질문", "답변"])
+    .reset_index(drop=True)
+)
+
+if len(d2v_faqs.dv) != len(questions_and_answers):
+    raise RuntimeError(
+        "Doc2Vec document count does not match the question dataset: "
+        f"{len(d2v_faqs.dv)} != {len(questions_and_answers)}"
+    )
+
+_inference_lock = threading.Lock()
 
 
-def tokenize_mecab_noun(doc):
-    # jpype.attachThreadToJVM()
-    token_doc = ['/'.join(word) for word in mecab.pos(doc) if word[1] in filter_mecab]
-    return token_doc
+def tokenize_mecab(document):
+    return [f"{word}/{tag}" for word, tag in mecab_tokenizer.pos(str(document))]
 
 
-index_questions = []
+def tokenize_mecab_noun(document):
+    return [
+        f"{word}/{tag}"
+        for word, tag in mecab_tokenizer.pos(str(document))
+        if tag in FILTER_MECAB
+    ]
 
-for i in range(len(df2)):  # df2가 0부터 시작
-    index_questions.append([tokenize_mecab_noun(df2['질문'][i]), i])  # 명사만 추출
 
-# Doc2Vec에서 사용하는 태그문서형으로 변경
-tagged_questions = [TaggedDocument(d, [int(c)]) for d, c in index_questions]
+def _database_logging_enabled():
+    return os.environ.get("CHATBOT_LOG_DB_ENABLED", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
-# FAQ 답변
-def faq_answer(input, useragent, client_ip):
-    if len(input) < 6:
-        return '질문이 너무 짧아요. 좀 더 구체적으로 질문 부탁해요.'
-    else:
-        # 테스트하는 문장도 같은 전처리를 해준다.
-        tokened_test_string = tokenize_mecab_noun(input)
+def _log_interaction(client_ip, useragent, similarity, question, matched_row):
+    if not _database_logging_enabled():
+        return
 
-        topn = 1  # 가장 유사한 질문 한 개까지만
-        test_vector = d2v_faqs.infer_vector(tokened_test_string)
-        result = d2v_faqs.docvecs.most_similar([test_vector], topn=topn)
+    required_settings = {
+        "host": os.environ.get("CHATBOT_DB_HOST"),
+        "user": os.environ.get("CHATBOT_DB_USER"),
+        "password": os.environ.get("CHATBOT_DB_PASSWORD"),
+        "database": os.environ.get("CHATBOT_DB_NAME"),
+    }
+    missing = [name for name, value in required_settings.items() if not value]
+    if missing:
+        logger.warning("Chat log database is enabled but settings are missing: %s", missing)
+        return
 
-        for i in range(topn):
-            print("유사질문 {}위 | 유사도: {:0.3f} | 문장 번호: {} | {}".format(i + 1, result[i][1], result[i][0], df2['질문'][result[i][0]]))
-            # print("\t질문 {} | 문장 번호: {} | {}".format(i + 1, result[i][0], df2['답변'][result[i][0]]))
-            # print(len(df2['답변'][result[i][0]]))
-            # for j in range(len(df2['답변'][result[i][0]])):
-            #    #print(j)
-            #    print("\t질문 {} | 답글순서 {} | 문장 번호: {} | {}".format(i + 1, j + 1, result[i][0], df2['답변'][result[i][0]][j]))
-
-            # 시각과 사용 운영체제, 입출력 데이터 엑셀로 저장 (20210227부 데이터베이스에 저장. 엑셀은 데이터 양이 많아지면 저장만 5초 이상 걸리는 문제가 생겼음)
-            #now = datetime.datetime.now()
-            #nowDatetime = now.strftime('%Y-%m-%d %H:%M:%S')
-            #load_wb = openpyxl.load_workbook('/home/ubuntu/faq_chatbot_science_3rd/data/datalog.xlsx', data_only=True)
-            #load_ws = load_wb['Sheet']
-            #time_and_input_output = [nowDatetime, useragent, result[i][1], input, df2['질문'][result[i][0]], df2['답변'][result[i][0]]]
-            # 질문이 입력된 시각, 유사도, 질문 내용, 가장 유사한 질문, 답변을 저장
-            #load_ws.append(time_and_input_output)  # 엑셀 파일에 차곡차곡 누가기록
-            #load_wb.save('/home/ubuntu/faq_chatbot_science_3rd/data/datalog.xlsx')
-
-            # 질문 입력 시 정보를 데이터베이스에 저장
-            connection = pymysql.connect(host='132.226.225.13', user='test', password='3014', db='chatbot_datalog', charset='utf8mb4', cursorclass=pymysql.cursors.DictCursor)
+    try:
+        connection = pymysql.connect(
+            **required_settings,
+            charset="utf8mb4",
+            cursorclass=pymysql.cursors.DictCursor,
+            connect_timeout=3,
+        )
+        with connection:
             with connection.cursor() as cursor:
-                sql = """INSERT INTO datalog (client_ip, useragent, similarity, student_question, dataset_question, answer)
-                         VALUES ('%s', '%s', '%f', '%s', '%s', '%s')"""%(client_ip, useragent, result[i][1], input, df2['질문'][result[i][0]], df2['답변'][result[i][0]])
-                cursor.execute(sql)
+                cursor.execute(
+                    """
+                    INSERT INTO datalog (
+                        client_ip, useragent, similarity, student_question,
+                        dataset_question, answer
+                    ) VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        client_ip,
+                        useragent,
+                        float(similarity),
+                        question,
+                        matched_row["질문"],
+                        matched_row["답변"],
+                    ),
+                )
             connection.commit()
-            connection.close()
-            print(client_ip)
-            if result[i][1] < 0.6:
-                return '입력한 질문에 대한 가장 유사한 질문의 유사도가 {:0.1f}%라서 60% 미만이라 엉뚱한 소리를 할 것 같으니 결과를 출력하지 않을게요. 질문을 더 구체적으로 써 주세요.'.format(result[i][1] * 100)
-            else:
-                return '입력한 질문과의 유사도: {:0.1f}%<br/><br/>질문: '.format(result[i][1] * 100) + df2['질문'][result[i][0]] + '<br/><br/>답변: ' + df2['답변'][result[i][0]]
+    except pymysql.MySQLError:
+        logger.exception("Failed to record the chatbot interaction")
 
-print('챗봇 불러오기 완료')
+
+def faq_answer(question, useragent="", client_ip=""):
+    question = str(question).strip()
+    if len(question) < 6:
+        return "질문이 너무 짧아요. 좀 더 구체적으로 질문 부탁해요."
+
+    tokens = tokenize_mecab_noun(question)
+    if not tokens:
+        return "질문에서 핵심 단어를 찾지 못했어요. 다른 표현으로 질문해 주세요."
+
+    with _inference_lock:
+        inferred_vector = d2v_faqs.infer_vector(tokens)
+        matched_index, similarity = d2v_faqs.dv.most_similar(
+            [inferred_vector], topn=1
+        )[0]
+
+    matched_row = questions_and_answers.iloc[int(matched_index)]
+    _log_interaction(
+        client_ip,
+        useragent,
+        similarity,
+        question,
+        matched_row,
+    )
+
+    if similarity < 0.6:
+        return (
+            "입력한 질문과 가장 유사한 질문의 유사도가 "
+            f"{similarity * 100:0.1f}%라서 결과를 표시하지 않을게요. "
+            "질문을 더 구체적으로 써 주세요."
+        )
+
+    return (
+        f"입력한 질문과의 유사도: {similarity * 100:0.1f}%\n\n"
+        f"질문: {matched_row['질문']}\n\n"
+        f"답변: {matched_row['답변']}"
+    )
